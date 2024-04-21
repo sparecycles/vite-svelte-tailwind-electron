@@ -4,7 +4,7 @@ import { VitePlugin } from "@electron-forge/plugin-vite";
 
 const config: ForgeConfig = {
   packagerConfig: {
-    name: "sample-vite-svelte-720",
+    name: "sample-vite-svelte-730",
     derefSymlinks: true,
   },
   rebuildConfig: {},

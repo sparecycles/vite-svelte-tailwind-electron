@@ -1,102 +1,195 @@
 import { builtinModules } from "node:module";
 import type { AddressInfo } from "node:net";
-import type { ConfigEnv, Plugin, UserConfig } from "vite";
+import {
+  ForgedConfigEnv,
+  UserConfigExport,
+  ViteDevServer,
+  mergeConfig,
+  type ConfigEnv,
+  type Plugin,
+  type UserConfig,
+} from "vite";
 import pkg from "./package.json";
 
-export const builtins = [
+export function extendMainConfig(config: UserConfigExport): UserConfigExport {
+  return async (env: ConfigEnv) =>
+    await applyBaseBuildConfig(env as ForgedConfigEnv<"build">, config, "main");
+}
+
+export function extendPreloadConfig(
+  config: UserConfigExport
+): UserConfigExport {
+  return async (env: ConfigEnv) =>
+    await applyBaseBuildConfig(
+      env as ForgedConfigEnv<"build">,
+      config,
+      "preload"
+    );
+}
+
+export function extendRendererConfig(
+  config: UserConfigExport
+): UserConfigExport {
+  return async (env: ConfigEnv) =>
+    await applyBaseRendererConfig(env as ForgedConfigEnv<"renderer">, config);
+}
+
+const builtins = [
   "electron",
-  ...builtinModules.map((m) => [m, `node:${m}`]).flat(),
+  ...builtinModules,
+  ...builtinModules.map((m) => `node:${m}`),
 ];
 
-export const external = [
-  ...builtins,
-  ...Object.keys(
-    "dependencies" in pkg ? (pkg.dependencies as Record<string, unknown>) : {}
-  ),
-];
+const external = [...builtins, ...Object.keys(pkg["dependencies"] ?? {})];
 
-export function getBuildConfig(env: ConfigEnv<"build">): UserConfig {
+// not quite sure why we need to smuggle this value via a global object.
+const viteDevServers = ((process as any).viteDevServers ??= {}) as Record<
+  string,
+  ViteDevServer
+>;
+
+function isPromiseForUserConfig(
+  config: UserConfigExport
+): config is Promise<UserConfig> {
+  return typeof (config as Promise<UserConfig>)?.then === "function";
+}
+
+async function resolveConfigExport(config: UserConfigExport, env: ConfigEnv) {
+  if (typeof config === "function") {
+    config = config(env);
+  }
+
+  if (isPromiseForUserConfig(config)) {
+    config = await config;
+  }
+
+  return config;
+}
+
+async function applyBaseBuildConfig(
+  env: ForgedConfigEnv<"build">,
+  config: UserConfigExport,
+  type: "main" | "preload"
+) {
   const { root, mode, command } = env;
+  const { entry } = env.forgeConfigSelf;
 
-  return {
+  const define = env.forgeConfig.renderer
+    .map(({ name }) => name)
+    .filter(Boolean)
+    .reduce<Record<string, string>>((define, name) => {
+      const devServerUrlKey = `${name!.toUpperCase()}_VITE_DEV_SERVER_URL`;
+      const viteName = `${name!.toUpperCase()}_VITE_NAME`;
+
+      define[devServerUrlKey] = JSON.stringify(
+        command === "serve"
+          ? `http://localhost:${
+              (viteDevServers[name!].httpServer?.address?.() as AddressInfo)
+                ?.port
+            }`
+          : undefined
+      );
+
+      define[viteName] = JSON.stringify(name);
+
+      return define;
+    }, {});
+
+  const mergedConfig = mergeConfig(
+    {
+      root,
+      mode,
+      ...(type === "main" && {
+        resolve: {
+          mainFields: ["module", "jsnext:main", "jsnext"],
+        },
+      }),
+      build: {
+        outDir: ".vite/build",
+        emptyOutDir: false,
+        watch: command === "serve" ? {} : null,
+        minify: command === "build",
+        ...(type === "main" && {
+          lib: {
+            entry: entry!,
+            fileName: () => "[name].js",
+            formats: ["cjs"],
+          },
+        }),
+        rollupOptions: {
+          external,
+          ...(type === "preload" && {
+            input: entry,
+            output: {
+              format: "cjs",
+              inlineDynamicImports: true,
+              entryFileNames: "[name].js",
+              chunkFileNames: "[name].js",
+              assetFileNames: "[name].[ext]",
+            },
+          }),
+        },
+      },
+      clearScreen: false,
+      define,
+    } satisfies UserConfig,
+    await resolveConfigExport(config, env)
+  );
+
+  (mergedConfig.plugins ??= []).push(pluginHotRestart("restart"));
+
+  return mergedConfig;
+}
+
+async function applyBaseRendererConfig(
+  env: ForgedConfigEnv<"renderer">,
+  config: UserConfigExport
+) {
+  const {
     root,
     mode,
-    build: {
-      // Prevent multiple builds from interfering with each other.
-      emptyOutDir: false,
-      // 🚧 Multiple builds may conflict.
-      outDir: ".vite/build",
-      watch: command === "serve" ? {} : null,
-      minify: command === "build",
-    },
-    clearScreen: false,
-  };
+    forgeConfigSelf: { name },
+  } = env;
+
+  const mergedConfig = mergeConfig(
+    {
+      root,
+      mode,
+      base: "./",
+      build: {
+        outDir: `.vite/renderer/${name}`,
+      },
+      resolve: {
+        preserveSymlinks: true,
+      },
+      clearScreen: false,
+    } as UserConfig,
+    await resolveConfigExport(config, env)
+  );
+
+  (mergedConfig.plugins ??= []).push(pluginExposeRenderer(name!));
+
+  return mergedConfig;
 }
 
-export function getDefineKeys(names: string[]) {
-  const define: { [name: string]: VitePluginRuntimeKeys } = {};
-
-  return names.reduce((acc, name) => {
-    const NAME = name.toUpperCase();
-    const keys: VitePluginRuntimeKeys = {
-      VITE_DEV_SERVER_URL: `${NAME}_VITE_DEV_SERVER_URL`,
-      VITE_NAME: `${NAME}_VITE_NAME`,
-    };
-
-    return { ...acc, [name]: keys };
-  }, define);
-}
-
-export function getBuildDefine(env: ConfigEnv<"build">) {
-  const { command, forgeConfig } = env;
-  const names = forgeConfig.renderer
-    .filter(({ name }) => name != null)
-    .map(({ name }) => name!);
-  const defineKeys = getDefineKeys(names);
-  const define = Object.entries(defineKeys).reduce((acc, [name, keys]) => {
-    const { VITE_DEV_SERVER_URL, VITE_NAME } = keys;
-    const def = {
-      [VITE_DEV_SERVER_URL]:
-        command === "serve"
-          ? JSON.stringify(process.env[VITE_DEV_SERVER_URL])
-          : undefined,
-      [VITE_NAME]: JSON.stringify(name),
-    };
-    return { ...acc, ...def };
-  }, {} as Record<string, any>);
-
-  return define;
-}
-
+//
 export function pluginExposeRenderer(name: string): Plugin {
-  const { VITE_DEV_SERVER_URL } = getDefineKeys([name])[name];
-
   return {
-    name: "@electron-forge/plugin-vite:expose-renderer",
+    name: "./plugin-vite:expose-renderer",
     configureServer(server) {
-      process.viteDevServers ??= {};
-      // Expose server for preload scripts hot reload.
-      process.viteDevServers[name] = server;
-
-      server.httpServer?.once("listening", () => {
-        const addressInfo = server.httpServer!.address() as AddressInfo;
-        // Expose env constant for main process use.
-        process.env[
-          VITE_DEV_SERVER_URL
-        ] = `http://localhost:${addressInfo?.port}`;
-      });
+      viteDevServers[name] = server;
     },
   };
 }
 
 export function pluginHotRestart(command: "reload" | "restart"): Plugin {
   return {
-    name: "@electron-forge/plugin-vite:hot-restart",
+    name: "./plugin-vite:hot-restart",
     closeBundle() {
       if (command === "reload") {
-        for (const server of Object.values(process.viteDevServers)) {
+        for (const server of Object.values(viteDevServers)) {
           // Preload scripts hot reload.
-          server.ws.send({ type: "full-reload" });
+          server.hot.send({ type: "full-reload" });
         }
       } else {
         // Main process hot restart.
