@@ -8,7 +8,15 @@ app.commandLine.appendSwitch("js-flags", "--stack_trace_limit=100");
 
 let mainWindow: BrowserWindow | null;
 
-const PUBLIC = path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/`);
+function relative(path) {
+  return new URL(import.meta.resolve(path)).pathname.replace(
+    // be friendlier to windows /C:/xyz/... paths.
+    /[/]([A-Z]):[/]/,
+    "$1:/"
+  );
+}
+
+const PUBLIC = relative(`../renderer/${MAIN_WINDOW_VITE_NAME}/`);
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -17,7 +25,7 @@ function createWindow() {
     height: 800,
     minHeight: 500,
     webPreferences: {
-      preload: path.join(__dirname, "./preload.js"),
+      preload: relative("./preload.js"),
     },
   });
 

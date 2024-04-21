@@ -21,7 +21,7 @@ export default defineConfig((env) => {
         // but here as build.rollupOptions...
         input: forgeConfigSelf.entry!,
         output: {
-          format: "cjs",
+          format: "es",
           // It should not be split chunks.
           inlineDynamicImports: true,
           entryFileNames: "[name].js",
