@@ -73,6 +73,7 @@ async function applyBaseBuildConfig(
 ) {
   const { root, mode, command } = env;
   const { entry } = env.forgeConfigSelf;
+  const format = pkg.type === "module" ? "es" : "cjs";
 
   const define = env.forgeConfig.renderer
     .map(({ name }) => name)
@@ -113,7 +114,7 @@ async function applyBaseBuildConfig(
           lib: {
             entry: entry!,
             fileName: () => "[name].js",
-            formats: ["cjs"],
+            formats: [format],
           },
         }),
         rollupOptions: {
@@ -121,7 +122,7 @@ async function applyBaseBuildConfig(
           ...(type === "preload" && {
             input: entry,
             output: {
-              format: "cjs",
+              format,
               inlineDynamicImports: true,
               entryFileNames: "[name].js",
               chunkFileNames: "[name].js",
