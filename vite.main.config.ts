@@ -1,17 +1,4 @@
 import { defineConfig } from "vite";
-import { mkdirSync, writeFileSync } from "node:fs";
-import path from "node:path";
-
-const dist = new URL(import.meta.resolve("./.vite/build/")).pathname.replace(
-  /[/]([A-Z]):[/]/,
-  "$1:/"
-);
-
-mkdirSync(dist, { recursive: true });
-writeFileSync(
-  path.join(dist, "package.json"),
-  JSON.stringify({ type: "commonjs" })
-);
 
 // https://vitejs.dev/config
 export default defineConfig({
@@ -21,13 +8,11 @@ export default defineConfig({
   build: {
     sourcemap: "inline",
     minify: false,
-    rollupOptions: {
-      input: {
-        main: "./electron/main.ts",
-      },
-      output: {
-        exports: "named",
-      },
+    outDir: "./.vite/build",
+    lib: {
+      entry: "./electron/main.ts",
+      fileName: () => "[name].js",
+      formats: ["es"],
     },
     commonjsOptions: {
       transformMixedEsModules: true,

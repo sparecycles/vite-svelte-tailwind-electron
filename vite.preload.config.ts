@@ -8,5 +8,10 @@ export default defineConfig({
   build: {
     sourcemap: "inline",
     minify: false,
+    rollupOptions: {
+      output: {
+        format: "es",
+      },
+    },
   },
 });
