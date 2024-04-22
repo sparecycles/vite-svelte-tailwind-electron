@@ -1,14 +1,7 @@
-import { defineConfig } from "vite";
-import { svelte } from "@sveltejs/vite-plugin-svelte";
+import type { UserConfig } from "vite";
 
 // https://vitejs.dev/config
-export default defineConfig({
-  resolve: {
-    preserveSymlinks: true,
-  },
-  plugins: [svelte({})],
-  build: {
-    sourcemap: "inline",
-    minify: false,
-  },
-});
+export default async () =>
+  ({
+    plugins: [(await import("@sveltejs/vite-plugin-svelte")).svelte({})],
+  } satisfies UserConfig);

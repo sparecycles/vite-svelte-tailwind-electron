@@ -1,6 +1,6 @@
 import "source-map-support/register";
 
-import path from "node:path";
+import { join } from "node:path";
 import { app, BrowserWindow } from "electron";
 
 // trying to get better stacks
@@ -10,7 +10,7 @@ let mainWindow: BrowserWindow | null;
 
 function resolveRelative(path) {
   if (typeof __dirname !== "undefined") {
-    return path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/`);
+    return join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/`);
   }
 
   return new URL(import.meta.resolve(path)).pathname.replace(
@@ -37,7 +37,7 @@ function createWindow() {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   } else {
     // win.loadFile('dist/index.html')
-    mainWindow.loadFile(path.join(PUBLIC, "index.html"));
+    mainWindow.loadFile(join(PUBLIC, "index.html"));
   }
 }
 

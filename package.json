@@ -1,7 +1,7 @@
 {
   "name": "sample",
   "private": true,
-  "type": "module",
+  "type": "commonjs",
   "version": "0.0.0",
   "main": ".vite/build/main.js",
   "scripts": {
